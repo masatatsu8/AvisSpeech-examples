@@ -4,10 +4,41 @@ import asyncio
 import openai
 from dotenv import load_dotenv
 from speech import speech  # 音声合成用の関数をインポート
+import time
 
 # 環境変数から OpenAI API キーを読み込む
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+async def display_text_with_audio_progress(text, progress):
+    """音声の進行状況に合わせて文字を表示する"""
+    sys.stdout.write("\rメイド: ")
+    sys.stdout.flush()
+    
+    text_length = len(text)
+    last_char_index = 0
+    
+    while not progress.is_finished:
+        # 音声の進行状況に基づいて、次に表示する文字のインデックスを計算
+        current_ratio = progress.current_sample / progress.total_samples
+        target_char_index = int(current_ratio * text_length)
+        
+        # 新しい文字を表示
+        while last_char_index < target_char_index and last_char_index < text_length:
+            sys.stdout.write(text[last_char_index])
+            sys.stdout.flush()
+            last_char_index += 1
+        
+        await asyncio.sleep(0.01)  # 短い待機時間
+    
+    # 残りの文字を表示
+    while last_char_index < text_length:
+        sys.stdout.write(text[last_char_index])
+        sys.stdout.flush()
+        last_char_index += 1
+    
+    sys.stdout.write("\n")
+    sys.stdout.flush()
 
 async def get_ai_response(prompt, conversation_history=None):
     if conversation_history is None:
@@ -58,13 +89,15 @@ async def interactive_chat():
             
             # AI の応答を取得
             ai_response = await get_ai_response(user_input, conversation_history)
-            print(f"メイド: {ai_response}")
             
             # 会話履歴に追加
             conversation_history.append({"role": "assistant", "content": ai_response})
             
-            # 音声合成で応答を読み上げ
-            await speech(ai_response)
+            # 音声合成を開始し、進行状況オブジェクトを取得
+            progress = await speech(ai_response)
+            
+            # 音声再生の進行に合わせて文字を表示
+            await display_text_with_audio_progress(ai_response, progress)
             
             # 会話履歴を最新の4往復に制限
             if len(conversation_history) > 8:
