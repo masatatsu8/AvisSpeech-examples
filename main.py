@@ -1,14 +1,14 @@
 import os
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Request, WebSocket, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 import openai
 from dotenv import load_dotenv
 from speech import speech
 import json
 import asyncio
-from database import database, ChatMessage
+from database import database, Chat, ChatMessage
 from datetime import datetime
 
 # 環境変数の読み込み
@@ -34,20 +34,57 @@ async def shutdown():
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    # 過去の会話履歴を取得
-    query = (
-        ChatMessage.__table__.select().order_by(ChatMessage.timestamp.desc()).limit(50)
-    )
-    chat_history = await database.fetch_all(query)
-    # 新しい順から古い順に並び替え
-    chat_history = list(reversed(chat_history))
+    # チャット一覧を取得
+    query = Chat.__table__.select().order_by(Chat.updated_at.desc())
+    chats = await database.fetch_all(query)
     return templates.TemplateResponse(
-        "chat.html", {"request": request, "chat_history": chat_history}
+        "chat_list.html", {"request": request, "chats": chats}
     )
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.post("/chat/new")
+async def create_chat():
+    # 新しいチャットを作成
+    query = Chat.__table__.insert().values(
+        title="新しい会話", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
+    )
+    chat_id = await database.execute(query)
+    return RedirectResponse(url=f"/chat/{chat_id}", status_code=303)
+
+
+@app.get("/chat/{chat_id}", response_class=HTMLResponse)
+async def read_chat(request: Request, chat_id: int):
+    # チャット一覧を取得
+    chats_query = Chat.__table__.select().order_by(Chat.updated_at.desc())
+    chats = await database.fetch_all(chats_query)
+    
+    # 現在のチャットの情報を取得
+    chat_query = Chat.__table__.select().where(Chat.id == chat_id)
+    chat = await database.fetch_one(chat_query)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    
+    # チャットのメッセージを取得
+    messages_query = (
+        ChatMessage.__table__.select()
+        .where(ChatMessage.chat_id == chat_id)
+        .order_by(ChatMessage.timestamp)
+    )
+    messages = await database.fetch_all(messages_query)
+    
+    return templates.TemplateResponse(
+        "chat.html",
+        {
+            "request": request,
+            "chat": chat,
+            "messages": messages,
+            "chats": chats,
+        },
+    )
+
+
+@app.websocket("/ws/{chat_id}")
+async def websocket_endpoint(websocket: WebSocket, chat_id: int):
     await websocket.accept()
 
     while True:
@@ -57,9 +94,20 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # ユーザーメッセージをデータベースに保存
             query = ChatMessage.__table__.insert().values(
-                role="user", content=user_message, timestamp=datetime.utcnow()
+                chat_id=chat_id,
+                role="user",
+                content=user_message,
+                timestamp=datetime.utcnow(),
             )
             await database.execute(query)
+
+            # チャットの更新日時を更新
+            update_query = (
+                Chat.__table__.update()
+                .where(Chat.id == chat_id)
+                .values(updated_at=datetime.utcnow())
+            )
+            await database.execute(update_query)
 
             # GPT-4からの応答を取得
             messages = [
@@ -71,7 +119,7 @@ async def websocket_endpoint(websocket: WebSocket):
             ]
 
             response = await openai.ChatCompletion.acreate(
-                model="gpt-4o-mini",
+                model="gpt-4",
                 messages=messages,
                 max_tokens=250,
                 temperature=0.7,
@@ -81,7 +129,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # アシスタントの応答をデータベースに保存
             query = ChatMessage.__table__.insert().values(
-                role="assistant", content=ai_response, timestamp=datetime.utcnow()
+                chat_id=chat_id,
+                role="assistant",
+                content=ai_response,
+                timestamp=datetime.utcnow(),
             )
             await database.execute(query)
 
