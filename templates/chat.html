@@ -5,277 +5,76 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>メイドチャット</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
-            background-color: #f5f5f5;
-            height: 100vh;
-            display: flex;
-        }
-
-        .sidebar {
-            width: 250px;
-            background-color: white;
-            border-right: 1px solid #eee;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-
-        .sidebar-header {
-            padding: 20px;
-            border-bottom: 1px solid #eee;
-            text-align: center;
-        }
-
-        .chat-list {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-
-        .chat-item {
-            display: block;
-            padding: 10px;
-            margin-bottom: 5px;
-            border-radius: 5px;
-            color: #333;
-            text-decoration: none;
-            transition: background-color 0.2s;
-            cursor: pointer;
-            position: relative;
-        }
-
-        .chat-item:hover {
-            background-color: #f8f9fa;
-        }
-
-        .chat-item.active {
-            background-color: #e9ecef;
-        }
-
-        .chat-title {
-            display: inline-block;
-            width: 100%;
-        }
-
-        .chat-title-input {
-            width: 100%;
-            padding: 5px;
-            border: 1px solid #ddd;
-            border-radius: 3px;
-            font-size: inherit;
-            background-color: white;
-        }
-
-        .new-chat-button {
-            display: block;
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px;
-            margin: 10px;
-            border-radius: 5px;
-            text-decoration: none;
-            text-align: center;
-            transition: background-color 0.2s;
-        }
-
-        .new-chat-button:hover {
-            background-color: #45a049;
-        }
-
-        .main-content {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            padding: 0;
-            position: relative;
-        }
-
-        .banner {
-            width: 100%;
-            height: 250px;
-            object-fit: cover;
-        }
-
-        .chat-container {
-            position: absolute;
-            top: 250px;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            margin: 0 auto;
-            padding: 20px;
-            max-width: 800px;
-            background-color: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            display: flex;
-            flex-direction: column;
-            height: calc(100% - 280px);
-            overflow: hidden;
-        }
-
-        .chat-messages {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 20px;
-            margin-bottom: 80px;
-        }
-
-        .message {
-            margin-bottom: 20px;
-            display: flex;
-            align-items: start;
-        }
-
-        .message.user {
-            flex-direction: row-reverse;
-        }
-
-        .message-content {
-            max-width: 70%;
-            padding: 10px 15px;
-            border-radius: 10px;
-            margin: 0 10px;
-        }
-
-        .user .message-content {
-            background-color: #dcf8c6;
-        }
-
-        .assistant .message-content {
-            background-color: #e3f2fd;
-        }
-
-        .maid-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            object-fit: cover;
-        }
-
-        .input-container {
-            position: absolute;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: calc(100% - 80px);
-            max-width: 720px;
-            padding: 15px;
-            background-color: white;
-            border-top: 1px solid #eee;
-            border-radius: 0 0 10px 10px;
-            display: flex;
-            gap: 10px;
-            z-index: 10;
-        }
-
-        #message-input {
-            flex-grow: 1;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-
-        #send-button {
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        #send-button:hover {
-            background-color: #45a049;
-        }
-
-        .tooltip {
-            visibility: hidden;
-            position: absolute;
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            z-index: 1000;
-            white-space: nowrap;
-            top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .chat-item:hover .tooltip {
-            visibility: visible;
-            opacity: 1;
-            transition-delay: 0.5s;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
 <body>
-    <div class="sidebar">
-        <div class="sidebar-header">
+    <div class="container">
+        <div class="sidebar">
             <h2>会話一覧</h2>
-        </div>
-        <form action="/chat/new" method="post">
-            <button type="submit" class="new-chat-button">新しい会話を始める</button>
-        </form>
-        <div class="chat-list">
-            {% for chat_item in chats %}
-            <div class="chat-item {% if chat_item.id == chat.id %}active{% endif %}">
-                <span class="chat-title" 
-                      data-chat-id="{{ chat_item.id }}" 
-                      onclick="handleClick(event, {{ chat_item.id }})" 
-                      ondblclick="handleDoubleClick(event, this, {{ chat_item.id }})">
-                    {{ chat_item.title }}
-                </span>
-                <div class="tooltip">作成日時: {{ chat_item.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="main-content">
-        <img src="/static/images/maid_chat.jpeg" alt="メイドチャット" class="banner">
-        <div class="chat-container">
-            <div id="chat-messages" class="chat-messages">
-                {% for message in messages %}
-                <div class="message {% if message.role == 'assistant' %}assistant{% else %}user{% endif %}">
-                    {% if message.role == 'assistant' %}
-                    <img src="/static/images/maid_icon.jpeg" class="maid-icon" alt="メイド">
-                    {% endif %}
-                    <div class="message-content">{{ message.content }}</div>
+            <a href="/" class="new-chat-button">新しい会話を始める</a>
+            <div class="chat-list">
+                {% for chat_item in chats %}
+                <div class="chat-item {% if chat_item.id == chat.id %}active{% endif %}">
+                    <span class="chat-title" data-chat-id="{{ chat_item.id }}"
+                        onclick="handleClick(event, {{ chat_item.id }})"
+                        ondblclick="handleDoubleClick(event, this, {{ chat_item.id }})">
+                        {{ chat_item.title }}
+                    </span>
+                    <span class="chat-menu-trigger" onclick="showChatMenu(event, {{ chat_item.id }})">⋮</span>
+                    <div class="chat-menu" id="chat-menu-{{ chat_item.id }}">
+                        <div class="chat-menu-item" onclick="handleRename(event, {{ chat_item.id }})">名称変更</div>
+                        <div class="chat-menu-item" onclick="handleDelete(event, {{ chat_item.id }})">削除</div>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
-            <div class="input-container">
-                <input type="text" id="message-input" placeholder="メッセージを入力してください...">
-                <button id="send-button">送信</button>
+        </div>
+
+        <div class="main-content">
+            <img src="/static/images/maid_chat.jpeg" alt="メイドチャット" class="banner">
+            <div class="chat-container">
+                <div id="chat-messages" class="chat-messages">
+                    {% for message in messages %}
+                    <div class="message {% if message.role == 'assistant' %}assistant{% else %}user{% endif %}"
+                        data-message-id="{{ message.id }}"
+                        oncontextmenu="showContextMenu(event, {{ message.id }}); return false;">
+                        {% if message.role == 'assistant' %}
+                        <img src="/static/images/maid_icon.jpeg" class="maid-icon" alt="メイド">
+                        {% endif %}
+                        <div class="message-content">{{ message.content }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="input-container">
+                    <input type="text" id="message-input" placeholder="メッセージを入力してください...">
+                    <button id="send-button">送信</button>
+                </div>
             </div>
         </div>
+    </div>
+
+    <!-- 右クリックメニュー -->
+    <div id="context-menu" class="context-menu">
+        <div class="context-menu-item" onclick="deleteMessage()">削除</div>
     </div>
 
     <script>
         let clickTimer = null;
         let preventClick = false;
+        let activeChatMenu = null;
 
         function handleClick(event, chatId) {
+            if (event.target.classList.contains('chat-title-input')) {
+                return;
+            }
             if (preventClick) {
                 preventClick = false;
                 return;
             }
 
             if (clickTimer === null) {
-                clickTimer = setTimeout(function() {
+                clickTimer = setTimeout(function () {
                     clickTimer = null;
                     window.location.href = `/chat/${chatId}`;
                 }, 200);
@@ -285,12 +84,15 @@
         function handleDoubleClick(event, element, chatId) {
             event.preventDefault();
             event.stopPropagation();
+            if (event.target.classList.contains('chat-title-input')) {
+                return;
+            }
             if (clickTimer) {
                 clearTimeout(clickTimer);
                 clickTimer = null;
             }
             preventClick = true;
-            editTitle(element, chatId);
+            startEditing(element, chatId);
         }
 
         function editTitle(element, chatId) {
@@ -299,15 +101,15 @@
             input.type = 'text';
             input.value = currentTitle;
             input.className = 'chat-title-input';
-            
+
             // 入力欄がクリックされたときにイベントの伝播を防ぐ
-            input.onclick = function(e) {
+            input.onclick = function (e) {
                 e.preventDefault();
                 e.stopPropagation();
             };
 
             // 入力欄でEnterキーが押されたときの処理
-            input.onkeydown = async function(e) {
+            input.onkeydown = async function (e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -316,7 +118,7 @@
             };
 
             // 入力欄からフォーカスが外れたときの処理
-            input.onblur = async function(e) {
+            input.onblur = async function (e) {
                 await updateTitle(input.value.trim(), currentTitle, element, chatId);
             };
 
@@ -351,6 +153,102 @@
             }
             element.style.display = '';
             element.parentNode.querySelector('.chat-title-input')?.remove();
+        }
+
+        // チャットメニューを表示
+        function showChatMenu(event, chatId) {
+            event.stopPropagation();
+
+            // 他のメニューを閉じる
+            if (activeChatMenu && activeChatMenu !== `chat-menu-${chatId}`) {
+                document.getElementById(activeChatMenu).style.display = 'none';
+            }
+
+            const menu = document.getElementById(`chat-menu-${chatId}`);
+            const display = menu.style.display;
+            menu.style.display = display === 'block' ? 'none' : 'block';
+            activeChatMenu = display === 'block' ? null : `chat-menu-${chatId}`;
+        }
+
+        // チャットの名称変更
+        function handleRename(event, chatId) {
+            event.stopPropagation();
+            const chatItem = event.target.closest('.chat-item');
+            const titleSpan = chatItem.querySelector('.chat-title');
+            startEditing(titleSpan, chatId);
+            hideChatMenu(chatId);
+        }
+
+        // チャットの削除
+        async function handleDelete(event, chatId) {
+            event.stopPropagation();
+
+            if (!confirm('このチャットを削除してもよろしいですか？')) {
+                hideChatMenu(chatId);
+                return;
+            }
+
+            try {
+                const response = await fetch(`/chats/${chatId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.next_chat_id) {
+                        window.location.href = `/chat/${data.next_chat_id}`;
+                    } else {
+                        window.location.href = '/';  // 会話が一つもない場合はトップページへ
+                    }
+                } else {
+                    alert('チャットの削除に失敗しました');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('チャットの削除に失敗しました');
+            }
+
+            hideChatMenu(chatId);
+        }
+
+        // チャットメニューを非表示
+        function hideChatMenu(chatId) {
+            const menu = document.getElementById(`chat-menu-${chatId}`);
+            if (menu) {
+                menu.style.display = 'none';
+                activeChatMenu = null;
+            }
+        }
+
+        // 名称変更の開始
+        function startEditing(element, chatId) {
+            const currentTitle = element.textContent.trim();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentTitle;
+            input.className = 'chat-title-input';
+
+            input.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            input.onkeydown = async function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await updateTitle(input.value.trim(), currentTitle, element, chatId);
+                }
+            };
+
+            input.onblur = async function (e) {
+                await updateTitle(input.value.trim(), currentTitle, element, chatId);
+            };
+
+            element.innerHTML = '';
+            element.appendChild(input);
+            input.focus();
+            input.select();
         }
 
         // ページ読み込み時に最下部にスクロール
@@ -427,6 +325,72 @@
             if (e.key === 'Enter') {
                 e.preventDefault();
                 sendMessage();
+            }
+        });
+
+        let selectedMessageId = null;
+
+        // 右クリックメニューを表示
+        function showContextMenu(event, messageId) {
+            event.preventDefault();
+            selectedMessageId = messageId;
+
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = event.pageX + 'px';
+            menu.style.top = event.pageY + 'px';
+        }
+
+        // メッセージを削除
+        async function deleteMessage() {
+            if (!selectedMessageId) return;
+
+            if (!confirm('このメッセージを削除してもよろしいですか？')) {
+                hideContextMenu();
+                return;
+            }
+
+            try {
+                const response = await fetch(`/messages/${selectedMessageId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    const messageElement = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+                    if (messageElement) {
+                        messageElement.remove();
+                    }
+                } else {
+                    alert('メッセージの削除に失敗しました');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('メッセージの削除に失敗しました');
+            }
+
+            hideContextMenu();
+        }
+
+        // 右クリックメニューを非表示
+        function hideContextMenu() {
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'none';
+            selectedMessageId = null;
+        }
+
+        // 画面のどこかをクリックしたら右クリックメニューを非表示
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest('#context-menu')) {
+                hideContextMenu();
+            }
+        });
+
+        // 画面のどこかをクリックしたらチャットメニューを非表示
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest('.chat-menu') && !event.target.closest('.chat-menu-trigger')) {
+                const menus = document.querySelectorAll('.chat-menu');
+                menus.forEach(menu => menu.style.display = 'none');
+                activeChatMenu = null;
             }
         });
     </script>

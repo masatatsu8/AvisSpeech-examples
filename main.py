@@ -147,6 +147,37 @@ async def update_chat_title(chat_id: int, title_update: ChatTitleUpdate):
     return {"status": "success"}
 
 
+@app.delete("/chats/{chat_id}")
+async def delete_chat(chat_id: int):
+    """チャットを削除する"""
+    # メッセージを削除
+    delete_messages_query = ChatMessage.__table__.delete().where(
+        ChatMessage.chat_id == chat_id
+    )
+    await database.execute(delete_messages_query)
+
+    # チャットを削除
+    delete_chat_query = Chat.__table__.delete().where(Chat.id == chat_id)
+    await database.execute(delete_chat_query)
+
+    # 直近の会話を取得
+    query = Chat.__table__.select().order_by(Chat.updated_at.desc())
+    latest_chat = await database.fetch_one(query)
+    
+    return {"status": "success", "next_chat_id": latest_chat.id if latest_chat else None}
+
+
+@app.delete("/messages/{message_id}")
+async def delete_message(message_id: int):
+    """メッセージを削除する"""
+    # メッセージを削除
+    delete_query = ChatMessage.__table__.delete().where(
+        ChatMessage.id == message_id
+    )
+    await database.execute(delete_query)
+    return {"status": "success"}
+
+
 async def get_openai_response(messages):
     """OpenAI APIからの応答をストリーミングで取得"""
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -279,10 +310,7 @@ async def process_streaming_response(websocket, response_generator):
             current_sentence += chunk
 
             # 文の終わりを検出
-            if any(
-                current_sentence.endswith(d)
-                for d in ["。", "！", "？", "!", "?"]
-            ):
+            if any(current_sentence.endswith(d) for d in ["。", "！", "？", "!", "?"]):
                 if current_progress is not None:
                     # 前の音声が終わるのを待つ
                     while not current_progress.is_finished:
@@ -290,9 +318,7 @@ async def process_streaming_response(websocket, response_generator):
 
                 # 新しい文の音声合成を開始
                 current_progress = await speech(current_sentence)
-                await display_with_speech(
-                    websocket, current_sentence, current_progress
-                )
+                await display_with_speech(websocket, current_sentence, current_progress)
                 current_sentence = ""
 
     except Exception as e:
@@ -304,9 +330,7 @@ async def process_streaming_response(websocket, response_generator):
             while not current_progress.is_finished:
                 await asyncio.sleep(0.01)
         current_progress = await speech(current_sentence)
-        await display_with_speech(
-            websocket, current_sentence, current_progress
-        )
+        await display_with_speech(websocket, current_sentence, current_progress)
 
     return full_response
 
@@ -359,7 +383,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
                 response_generator = get_ollama_response(messages)
 
             # 応答を処理
-            full_response = await process_streaming_response(websocket, response_generator)
+            full_response = await process_streaming_response(
+                websocket, response_generator
+            )
 
             # 余分なメッセージを削除（Ollama用）
             if ENGINE == "ollama" and "banphrase" in full_response:
