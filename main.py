@@ -79,11 +79,12 @@ async def read_root(request: Request):
 @app.post("/chat/new")
 async def create_chat():
     """新しいチャットを作成する"""
+    # 新しい会話を作成
     query = Chat.__table__.insert().values(
         title="新しい会話", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
     )
     chat_id = await database.execute(query)
-    return RedirectResponse(url=f"/chat/{chat_id}", status_code=303)
+    return {"chat_id": chat_id}
 
 
 @app.get("/chat/{chat_id}", response_class=HTMLResponse)

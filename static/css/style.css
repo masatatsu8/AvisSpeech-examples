@@ -10,11 +10,14 @@ body {
 }
 
 .sidebar {
+    min-width: 250px;
     width: 250px;
+    flex-shrink: 0;
     background-color: #f8f9fa;
     border-right: 1px solid #dee2e6;
     overflow-y: auto;
     padding: 20px;
+    height: 100vh;
 }
 
 .main-content {
@@ -25,6 +28,11 @@ body {
 }
 
 /* チャット一覧のスタイル */
+.chat-list {
+    overflow-y: auto;
+    max-height: calc(100vh - 150px);
+}
+
 .chat-item {
     position: relative;
     padding: 10px;
@@ -33,6 +41,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    min-height: 40px;
 }
 
 .chat-item:hover {
@@ -46,6 +55,9 @@ body {
 .chat-title {
     flex-grow: 1;
     margin-right: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chat-title-input {
@@ -143,7 +155,7 @@ body {
 }
 
 .message-content {
-    background-color: #e9ecef;
+    background-color: #fbe0e6;
     padding: 10px 15px;
     border-radius: 15px;
     max-width: 70%;
@@ -151,7 +163,7 @@ body {
 }
 
 .message.user .message-content {
-    background-color: #dcf8c6;
+    background-color: #d5f8fe;
 }
 
 .maid-icon {
