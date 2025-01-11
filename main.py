@@ -267,12 +267,48 @@ async def get_chat_history(chat_id):
     return [{"role": msg["role"], "content": msg["content"]} for msg in messages]
 
 
-async def process_response_with_speech(websocket, response):
-    """応答を文単位で処理し、音声合成と表示を行う"""
-    sentences = await split_into_sentences(response)
-    for sentence in sentences:
-        progress = await speech(sentence)
-        await display_with_speech(websocket, sentence, progress)
+async def process_streaming_response(websocket, response_generator):
+    """ストリーミング応答を処理し、音声合成と表示を行う"""
+    full_response = ""
+    current_sentence = ""
+    current_progress = None
+
+    try:
+        async for chunk in response_generator:
+            full_response += chunk
+            current_sentence += chunk
+
+            # 文の終わりを検出
+            if any(
+                current_sentence.endswith(d)
+                for d in ["。", "！", "？", "!", "?"]
+            ):
+                if current_progress is not None:
+                    # 前の音声が終わるのを待つ
+                    while not current_progress.is_finished:
+                        await asyncio.sleep(0.01)
+
+                # 新しい文の音声合成を開始
+                current_progress = await speech(current_sentence)
+                await display_with_speech(
+                    websocket, current_sentence, current_progress
+                )
+                current_sentence = ""
+
+    except Exception as e:
+        raise
+
+    # 残りの文を処理
+    if current_sentence.strip():
+        if current_progress is not None:
+            while not current_progress.is_finished:
+                await asyncio.sleep(0.01)
+        current_progress = await speech(current_sentence)
+        await display_with_speech(
+            websocket, current_sentence, current_progress
+        )
+
+    return full_response
 
 
 @app.websocket("/ws/{chat_id}")
@@ -314,87 +350,16 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
             # 履歴を追加（最新の10件まで）
             messages.extend(history[-10:])
 
-            full_response = ""
-            current_sentence = ""
-            current_progress = None
-
-            if ENGINE in ["openai", "deepseek"]:
-                # OpenAIとDeepSeekは同じ処理フロー
-                response_generator = (
-                    get_openai_response(messages)
-                    if ENGINE == "openai"
-                    else get_deepseek_response(messages)
-                )
-                try:
-                    async for chunk in response_generator:
-                        full_response += chunk
-                        current_sentence += chunk
-
-                        # 文の終わりを検出
-                        if any(
-                            current_sentence.endswith(d)
-                            for d in ["。", "！", "？", "!", "?"]
-                        ):
-                            if current_progress is not None:
-                                # 前の音声が終わるのを待つ
-                                while not current_progress.is_finished:
-                                    await asyncio.sleep(0.01)
-
-                            # 新しい文の音声合成を開始
-                            current_progress = await speech(current_sentence)
-                            await display_with_speech(
-                                websocket, current_sentence, current_progress
-                            )
-                            current_sentence = ""
-
-                except Exception as e:
-                    raise
-
-                # 残りの文を処理
-                if current_sentence.strip():
-                    if current_progress is not None:
-                        while not current_progress.is_finished:
-                            await asyncio.sleep(0.01)
-                    current_progress = await speech(current_sentence)
-                    await display_with_speech(
-                        websocket, current_sentence, current_progress
-                    )
-
+            # エンジンに応じたレスポンスジェネレータを選択
+            if ENGINE == "openai":
+                response_generator = get_openai_response(messages)
+            elif ENGINE == "deepseek":
+                response_generator = get_deepseek_response(messages)
             else:  # ollama
-                try:
-                    async for chunk in get_ollama_response(messages):
-                        full_response += chunk
-                        current_sentence += chunk
+                response_generator = get_ollama_response(messages)
 
-                        # 文の終わりを検出
-                        if any(
-                            current_sentence.endswith(d)
-                            for d in ["。", "！", "？", "!", "?"]
-                        ):
-                            if current_progress is not None:
-                                # 前の音声が終わるのを待つ
-                                while not current_progress.is_finished:
-                                    await asyncio.sleep(0.01)
-
-                            # 新しい文の音声合成を開始
-                            current_progress = await speech(current_sentence)
-                            await display_with_speech(
-                                websocket, current_sentence, current_progress
-                            )
-                            current_sentence = ""
-
-                except Exception as e:
-                    raise
-
-                # 残りの文を処理
-                if current_sentence.strip():
-                    if current_progress is not None:
-                        while not current_progress.is_finished:
-                            await asyncio.sleep(0.01)
-                    current_progress = await speech(current_sentence)
-                    await display_with_speech(
-                        websocket, current_sentence, current_progress
-                    )
+            # 応答を処理
+            full_response = await process_streaming_response(websocket, response_generator)
 
             # 余分なメッセージを削除（Ollama用）
             if ENGINE == "ollama" and "banphrase" in full_response:
