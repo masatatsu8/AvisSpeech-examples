@@ -266,6 +266,14 @@ async def get_chat_history(chat_id):
     return [{"role": msg["role"], "content": msg["content"]} for msg in messages]
 
 
+async def process_response_with_speech(websocket, response):
+    """応答を文単位で処理し、音声合成と表示を行う"""
+    sentences = await split_into_sentences(response)
+    for sentence in sentences:
+        progress = await speech(sentence)
+        await display_with_speech(websocket, sentence, progress)
+
+
 @app.websocket("/ws/{chat_id}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: int):
     await websocket.accept()
@@ -309,20 +317,13 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
             current_sentence = ""
             current_progress = None
 
-            if ENGINE == "openai":
-                full_response = await get_openai_response(messages)
-                # OpenAIの応答を文単位で処理
-                sentences = await split_into_sentences(full_response)
-                for sentence in sentences:
-                    progress = await speech(sentence)
-                    await display_with_speech(websocket, sentence, progress)
-            elif ENGINE == "deepseek":
-                full_response = await get_deepseek_response(messages)
-                # DeepSeekの応答を文単位で処理
-                sentences = await split_into_sentences(full_response)
-                for sentence in sentences:
-                    progress = await speech(sentence)
-                    await display_with_speech(websocket, sentence, progress)
+            if ENGINE in ["openai", "deepseek"]:
+                # OpenAIとDeepSeekは同じ処理フロー
+                if ENGINE == "openai":
+                    full_response = await get_openai_response(messages)
+                else:  # deepseek
+                    full_response = await get_deepseek_response(messages)
+                await process_response_with_speech(websocket, full_response)
             else:  # ollama
                 try:
                     async for chunk in get_ollama_response(messages):
