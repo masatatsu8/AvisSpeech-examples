@@ -1,15 +1,17 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>メイドチャット</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
     <div class="container">
         <div class="index-content">
-            <img src="/static/images/maid_icon.jpeg" alt="メイド" class="maid-icon-large">
+            <img src="/static/images/maid_icon.png" alt="メイド" class="maid-icon-large">
             <h1>メイドチャット</h1>
             <button onclick="createNewChat()" class="new-chat-button">新しい会話を始める</button>
             <div class="chat-list">
@@ -17,7 +19,8 @@
                 <div class="chat-item" onclick="location.href='/chat/{{ chat.id }}'">
                     <span class="chat-title">{{ chat.title or '新しい会話' }}</span>
                     <span class="chat-date">{{ chat.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                    <button class="delete-button" onclick="event.stopPropagation(); deleteChat({{ chat.id }})">削除</button>
+                    <button class="delete-button"
+                        onclick="event.stopPropagation(); deleteChat({{ chat.id }})">削除</button>
                 </div>
                 {% endfor %}
             </div>
@@ -28,11 +31,14 @@
         async function createNewChat() {
             try {
                 const response = await fetch('/chat/new', {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    redirect: 'follow'
                 });
-                if (response.ok) {
-                    const data = await response.json();
-                    window.location.href = `/chat/${data.chat_id}`;
+                if (response.redirected) {
+                    window.location.href = response.url;
                 }
             } catch (error) {
                 console.error('Error creating new chat:', error);
@@ -55,4 +61,5 @@
         }
     </script>
 </body>
+
 </html>

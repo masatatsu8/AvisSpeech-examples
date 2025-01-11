@@ -22,7 +22,7 @@ load_dotenv()
 ENGINE = os.getenv("ENGINE", "openai")  # openai, ollama, deepseek
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "7shi/tanuki-dpo-v1.0:8b-q6_K")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi4")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
@@ -80,12 +80,10 @@ async def read_root(request: Request):
 async def create_chat():
     """新しいチャットを作成する"""
     query = Chat.__table__.insert().values(
-        title="新しい会話",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        title="新しい会話", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
     )
     chat_id = await database.execute(query)
-    return {"chat_id": chat_id}
+    return RedirectResponse(url=f"/chat/{chat_id}", status_code=303)
 
 
 @app.get("/chat/{chat_id}", response_class=HTMLResponse)
@@ -166,17 +164,18 @@ async def delete_chat(chat_id: int):
     # 直近の会話を取得
     query = Chat.__table__.select().order_by(Chat.updated_at.desc())
     latest_chat = await database.fetch_one(query)
-    
-    return {"status": "success", "next_chat_id": latest_chat.id if latest_chat else None}
+
+    return {
+        "status": "success",
+        "next_chat_id": latest_chat.id if latest_chat else None,
+    }
 
 
 @app.delete("/messages/{message_id}")
 async def delete_message(message_id: int):
     """メッセージを削除する"""
     # メッセージを削除
-    delete_query = ChatMessage.__table__.delete().where(
-        ChatMessage.id == message_id
-    )
+    delete_query = ChatMessage.__table__.delete().where(ChatMessage.id == message_id)
     await database.execute(delete_query)
     return {"status": "success"}
 
@@ -413,10 +412,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
             except Exception as e:
                 print(f"Error in websocket loop: {e}")
                 try:
-                    await websocket.send_json({
-                        "type": "error",
-                        "content": str(e)
-                    })
+                    await websocket.send_json({"type": "error", "content": str(e)})
                 except:
                     pass
                 break

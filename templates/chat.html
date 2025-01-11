@@ -41,7 +41,7 @@
                         data-message-id="{{ message.id }}"
                         oncontextmenu="showContextMenu(event, {{ message.id }}); return false;">
                         {% if message.role == 'assistant' %}
-                        <img src="/static/images/maid_icon.jpeg" class="maid-icon" alt="メイド">
+                        <img src="/static/images/maid_icon.png" class="maid-icon" alt="メイド">
                         {% endif %}
                         <div class="message-content">{{ message.content }}</div>
                     </div>
@@ -286,7 +286,7 @@
                     const messageDiv = document.createElement('div');
                     messageDiv.className = 'message assistant';
                     messageDiv.innerHTML = `
-                        <img src="/static/images/maid_icon.jpeg" class="maid-icon" alt="メイド">
+                        <img src="/static/images/maid_icon.png" class="maid-icon" alt="メイド">
                         <div class="message-content"></div>
                     `;
                     document.getElementById('chat-messages').appendChild(messageDiv);
