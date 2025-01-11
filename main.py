@@ -79,12 +79,11 @@ async def read_root(request: Request):
 @app.post("/chat/new")
 async def create_chat():
     """新しいチャットを作成する"""
-    # 新しい会話を作成
     query = Chat.__table__.insert().values(
         title="新しい会話", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
     )
     chat_id = await database.execute(query)
-    return {"chat_id": chat_id}
+    return RedirectResponse(url=f"/chat/{chat_id}", status_code=303)
 
 
 @app.get("/chat/{chat_id}", response_class=HTMLResponse)
@@ -195,44 +194,6 @@ async def get_openai_response(messages):
             yield chunk.choices[0].delta.content
 
 
-async def get_ollama_response(messages):
-    """Ollama APIからの応答をストリーミングで取得"""
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": messages,
-                "stream": True,
-                "options": {
-                    "temperature": 0.7,
-                    "num_predict": 250,
-                },
-            },
-        ) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                raise Exception(f"Ollama API error: {error_text}")
-
-            async for line in response.content:
-                if not line:
-                    continue
-                try:
-                    line_text = line.decode("utf-8")
-                    json_line = json.loads(line_text)
-                    if "error" in json_line:
-                        raise Exception(f"Ollama API error: {json_line['error']}")
-                    if "done" in json_line and json_line["done"]:
-                        break
-                    if "message" in json_line and "content" in json_line["message"]:
-                        chunk = json_line["message"]["content"]
-                        yield chunk
-                except json.JSONDecodeError:
-                    continue
-                except Exception as e:
-                    raise
-
-
 async def get_deepseek_response(messages):
     """DeepSeek APIからの応答をストリーミングで取得"""
     client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
@@ -247,24 +208,37 @@ async def get_deepseek_response(messages):
             yield chunk.choices[0].delta.content
 
 
-async def split_into_sentences(text):
-    """テキストを文単位で分割"""
-    # 句点や感嘆符などで分割
-    delimiters = ["。", "！", "？", "!", "?"]
-    sentences = []
-    current = ""
+async def get_ollama_response(messages):
+    """Ollama APIからの応答をストリーミングで取得"""
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": messages[-1]["content"],
+                "stream": True,
+            },
+        ) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                raise HTTPException(
+                    status_code=response.status,
+                    detail=f"Ollama API error: {error_text}",
+                )
 
-    for char in text:
-        current += char
-        if any(char == d for d in delimiters):
-            if current.strip():
-                sentences.append(current)
-            current = ""
-
-    if current.strip():
-        sentences.append(current)
-
-    return sentences
+            try:
+                async for line in response.content:
+                    if not line:
+                        continue
+                    try:
+                        json_response = json.loads(line)
+                        if "response" in json_response:
+                            yield json_response["response"]
+                    except json.JSONDecodeError:
+                        continue
+            except Exception as e:
+                print(f"Error in streaming response: {e}")
+                raise
 
 
 async def display_with_speech(websocket, text, progress):
