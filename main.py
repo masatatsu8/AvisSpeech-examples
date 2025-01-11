@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request, WebSocket, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
-import openai
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from speech import speech
 import json
@@ -13,7 +13,7 @@ from datetime import datetime
 
 # 環境変数の読み込み
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
@@ -118,7 +118,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
                 {"role": "user", "content": user_message},
             ]
 
-            response = await openai.ChatCompletion.acreate(
+            response = await client.chat.completions.create(
                 model="gpt-4",
                 messages=messages,
                 max_tokens=250,

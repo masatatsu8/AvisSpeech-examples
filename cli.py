@@ -1,15 +1,16 @@
 import os
 import sys
 import asyncio
-import openai
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from speech import speech  # 音声合成用の関数をインポート
 import time
 
 # 環境変数から OpenAI API キーを読み込む
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# 音声の進行状況に合わせて文字を表示する
 async def display_text_with_audio_progress(text, progress):
     """音声の進行状況に合わせて文字を表示する"""
     sys.stdout.write("\rメイド: ")
@@ -57,8 +58,8 @@ async def get_ai_response(prompt, conversation_history=None):
     messages.append({"role": "user", "content": prompt})
     
     try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini",
+        response = await client.chat.completions.create(
+            model="gpt-4",
             messages=messages,
             max_tokens=250,  # 応答の長さを制限
             temperature=0.7,
