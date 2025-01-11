@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>メイドチャット</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+        }
+        
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .message.user {
+            flex-direction: row-reverse;
+        }
+        
+        .message-content {
+            max-width: 70%;
+            padding: 10px 15px;
+            border-radius: 15px;
+            position: relative;
+            margin: 0 10px;
+        }
+        
+        .maid .message-content {
+            background-color: #e3f2fd;
+        }
+        
+        .user .message-content {
+            background-color: #dcf8c6;
+        }
+        
+        .maid-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #e3f2fd;
+        }
+        
+        .input-container {
+            padding: 20px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+        }
+        
+        #message-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        .typing {
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="メッセージを入力してください...">
+            <button onclick="sendMessage()">送信</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = new WebSocket(`ws://${window.location.host}/ws`);
+        let currentMaidMessage = null;
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'partial') {
+                if (!currentMaidMessage) {
+                    // 新しいメイドのメッセージを作成
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message maid';
+                    messageDiv.innerHTML = `
+                        <img src="/static/images/maid_icon.jpeg" class="maid-icon" alt="メイド">
+                        <div class="message-content typing"></div>
+                    `;
+                    document.getElementById('chat-messages').appendChild(messageDiv);
+                    currentMaidMessage = messageDiv.querySelector('.message-content');
+                }
+                
+                // テキストを追加
+                currentMaidMessage.textContent += data.text;
+            } else if (data.type === 'complete') {
+                if (currentMaidMessage) {
+                    currentMaidMessage.classList.remove('typing');
+                    currentMaidMessage = null;
+                }
+                scrollToBottom();
+            }
+        };
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (message) {
+                // ユーザーのメッセージを表示
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message user';
+                messageDiv.innerHTML = `
+                    <div class="message-content">${message}</div>
+                `;
+                document.getElementById('chat-messages').appendChild(messageDiv);
+                
+                // メッセージを送信
+                ws.send(message);
+                
+                // 入力欄をクリア
+                input.value = '';
+                scrollToBottom();
+            }
+        }
+
+        function scrollToBottom() {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Enterキーでメッセージを送信
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

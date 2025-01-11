@@ -3,3 +3,8 @@ python-dotenv
 requests
 pyaudio
 numpy
+fastapi
+uvicorn
+jinja2
+python-multipart
+aiofiles
