@@ -11,8 +11,9 @@
 <body>
     <div class="container">
         <div class="sidebar">
-            <h2>会話一覧</h2>
-            <a href="/" class="new-chat-button">新しい会話を始める</a>
+            <h2 style="text-align: center; text-decoration: none;"><a href="/"
+                    style="text-decoration: none;">メイドチャット</a></h2>
+            <button onclick="createNewChat()" class="new-chat-button">新しい会話を始める</button>
             <div class="chat-list">
                 {% for chat_item in chats %}
                 <div class="chat-item {% if chat_item.id == chat.id %}active{% endif %}">
@@ -393,6 +394,20 @@
                 activeChatMenu = null;
             }
         });
+
+        async function createNewChat() {
+            try {
+                const response = await fetch('/chat/new', {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    window.location.href = `/chat/${data.chat_id}`;
+                }
+            } catch (error) {
+                console.error('Error creating new chat:', error);
+            }
+        }
     </script>
 </body>
 

@@ -1,10 +1,10 @@
 import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from openai import AsyncOpenAI
-from dotenv import load_dotenv
 from speech import speech
 import json
 import asyncio
@@ -13,6 +13,7 @@ from datetime import datetime
 import pytz
 import aiohttp
 from pydantic import BaseModel
+from starlette.websockets import WebSocketDisconnect
 
 # 環境変数の読み込み
 load_dotenv()
@@ -77,12 +78,14 @@ async def read_root(request: Request):
 
 @app.post("/chat/new")
 async def create_chat():
-    # 新しいチャットを作成
+    """新しいチャットを作成する"""
     query = Chat.__table__.insert().values(
-        title="新しい会話", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
+        title="新しい会話",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
     chat_id = await database.execute(query)
-    return RedirectResponse(url=f"/chat/{chat_id}", status_code=303)
+    return {"chat_id": chat_id}
 
 
 @app.get("/chat/{chat_id}", response_class=HTMLResponse)
@@ -339,73 +342,92 @@ async def process_streaming_response(websocket, response_generator):
 async def websocket_endpoint(websocket: WebSocket, chat_id: int):
     await websocket.accept()
 
-    while True:
+    try:
+        while True:
+            try:
+                # クライアントからのメッセージを受信
+                user_message = await websocket.receive_text()
+
+                # ユーザーメッセージをデータベースに保存
+                query = ChatMessage.__table__.insert().values(
+                    chat_id=chat_id,
+                    role="user",
+                    content=user_message,
+                    timestamp=datetime.utcnow(),
+                )
+                await database.execute(query)
+
+                # チャットの更新日時を更新
+                update_query = (
+                    Chat.__table__.update()
+                    .where(Chat.id == chat_id)
+                    .values(updated_at=datetime.utcnow())
+                )
+                await database.execute(update_query)
+
+                # チャット履歴を取得
+                history = await get_chat_history(chat_id)
+
+                # LLMへのメッセージを構築
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "あなたはご主人様に仕えるメイドです。できるだけ簡潔に応答してください。これまでの会話履歴を考慮して応答してください。",
+                    },
+                ]
+                # 履歴を追加（最新の10件まで）
+                messages.extend(history[-10:])
+
+                # エンジンに応じたレスポンスジェネレータを選択
+                if ENGINE == "openai":
+                    response_generator = get_openai_response(messages)
+                elif ENGINE == "deepseek":
+                    response_generator = get_deepseek_response(messages)
+                else:  # ollama
+                    response_generator = get_ollama_response(messages)
+
+                # 応答を処理
+                full_response = await process_streaming_response(
+                    websocket, response_generator
+                )
+
+                # 余分なメッセージを削除（Ollama用）
+                if ENGINE == "ollama" and "banphrase" in full_response:
+                    full_response = full_response.split("banphrase")[0].strip()
+
+                # アシスタントの応答をデータベースに保存
+                query = ChatMessage.__table__.insert().values(
+                    chat_id=chat_id,
+                    role="assistant",
+                    content=full_response,
+                    timestamp=datetime.utcnow(),
+                )
+                await database.execute(query)
+
+                # 完了通知を送信
+                await websocket.send_json({"type": "complete"})
+
+            except WebSocketDisconnect:
+                print("WebSocket disconnected")
+                break
+            except Exception as e:
+                print(f"Error in websocket loop: {e}")
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": str(e)
+                    })
+                except:
+                    pass
+                break
+
+    except Exception as e:
+        print(f"Websocket error: {e}")
+    finally:
         try:
-            # クライアントからのメッセージを受信
-            user_message = await websocket.receive_text()
-
-            # ユーザーメッセージをデータベースに保存
-            query = ChatMessage.__table__.insert().values(
-                chat_id=chat_id,
-                role="user",
-                content=user_message,
-                timestamp=datetime.utcnow(),
-            )
-            await database.execute(query)
-
-            # チャットの更新日時を更新
-            update_query = (
-                Chat.__table__.update()
-                .where(Chat.id == chat_id)
-                .values(updated_at=datetime.utcnow())
-            )
-            await database.execute(update_query)
-
-            # チャット履歴を取得
-            history = await get_chat_history(chat_id)
-
-            # LLMへのメッセージを構築
-            messages = [
-                {
-                    "role": "system",
-                    "content": "あなたはご主人様に仕えるメイドです。できるだけ簡潔に応答してください。これまでの会話履歴を考慮して応答してください。",
-                },
-            ]
-            # 履歴を追加（最新の10件まで）
-            messages.extend(history[-10:])
-
-            # エンジンに応じたレスポンスジェネレータを選択
-            if ENGINE == "openai":
-                response_generator = get_openai_response(messages)
-            elif ENGINE == "deepseek":
-                response_generator = get_deepseek_response(messages)
-            else:  # ollama
-                response_generator = get_ollama_response(messages)
-
-            # 応答を処理
-            full_response = await process_streaming_response(
-                websocket, response_generator
-            )
-
-            # 余分なメッセージを削除（Ollama用）
-            if ENGINE == "ollama" and "banphrase" in full_response:
-                full_response = full_response.split("banphrase")[0].strip()
-
-            # アシスタントの応答をデータベースに保存
-            query = ChatMessage.__table__.insert().values(
-                chat_id=chat_id,
-                role="assistant",
-                content=full_response,
-                timestamp=datetime.utcnow(),
-            )
-            await database.execute(query)
-
-            # 完了通知を送信
-            await websocket.send_json({"type": "complete"})
-
-        except Exception as e:
             await websocket.close()
-            break
+        except:
+            pass
 
 
 if __name__ == "__main__":
