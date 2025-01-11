@@ -19,7 +19,7 @@ load_dotenv()
 
 # エンジンの設定を読み込み
 ENGINE = os.getenv("ENGINE", "openai")  # openai, ollama, deepseek
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "7shi/tanuki-dpo-v1.0:8b-q6_K")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -148,15 +148,17 @@ async def update_chat_title(chat_id: int, title_update: ChatTitleUpdate):
 
 
 async def get_openai_response(messages):
-    """OpenAI APIからの応答を取得"""
+    """OpenAI APIからの応答をストリーミングで取得"""
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    response = await client.chat.completions.create(
+    async for chunk in await client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=messages,
         max_tokens=250,
         temperature=0.7,
-    )
-    return response.choices[0].message.content.strip()
+        stream=True,
+    ):
+        if chunk.choices[0].delta.content is not None:
+            yield chunk.choices[0].delta.content
 
 
 async def get_ollama_response(messages):
@@ -198,18 +200,17 @@ async def get_ollama_response(messages):
 
 
 async def get_deepseek_response(messages):
-    """DeepSeek APIからの応答を取得"""
-    client = AsyncOpenAI(
-        api_key=DEEPSEEK_API_KEY,
-        base_url="https://api.deepseek.com"
-    )
-    response = await client.chat.completions.create(
+    """DeepSeek APIからの応答をストリーミングで取得"""
+    client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+    async for chunk in await client.chat.completions.create(
         model=DEEPSEEK_MODEL,
         messages=messages,
         max_tokens=250,
         temperature=0.7,
-    )
-    return response.choices[0].message.content.strip()
+        stream=True,
+    ):
+        if chunk.choices[0].delta.content is not None:
+            yield chunk.choices[0].delta.content
 
 
 async def split_into_sentences(text):
@@ -319,11 +320,46 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
 
             if ENGINE in ["openai", "deepseek"]:
                 # OpenAIとDeepSeekは同じ処理フロー
-                if ENGINE == "openai":
-                    full_response = await get_openai_response(messages)
-                else:  # deepseek
-                    full_response = await get_deepseek_response(messages)
-                await process_response_with_speech(websocket, full_response)
+                response_generator = (
+                    get_openai_response(messages)
+                    if ENGINE == "openai"
+                    else get_deepseek_response(messages)
+                )
+                try:
+                    async for chunk in response_generator:
+                        full_response += chunk
+                        current_sentence += chunk
+
+                        # 文の終わりを検出
+                        if any(
+                            current_sentence.endswith(d)
+                            for d in ["。", "！", "？", "!", "?"]
+                        ):
+                            if current_progress is not None:
+                                # 前の音声が終わるのを待つ
+                                while not current_progress.is_finished:
+                                    await asyncio.sleep(0.01)
+
+                            # 新しい文の音声合成を開始
+                            current_progress = await speech(current_sentence)
+                            await display_with_speech(
+                                websocket, current_sentence, current_progress
+                            )
+                            current_sentence = ""
+
+                except Exception as e:
+                    raise
+
+                # 残りの文を処理
+                if current_sentence.strip():
+                    if current_progress is not None:
+                        while not current_progress.is_finished:
+                            await asyncio.sleep(0.01)
+                    current_progress = await speech(current_sentence)
+                    await display_with_speech(
+                        websocket, current_sentence, current_progress
+                    )
+
             else:  # ollama
                 try:
                     async for chunk in get_ollama_response(messages):
