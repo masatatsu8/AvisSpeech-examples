@@ -18,10 +18,12 @@ from pydantic import BaseModel
 load_dotenv()
 
 # エンジンの設定を読み込み
-ENGINE = os.getenv("ENGINE", "openai")
+ENGINE = os.getenv("ENGINE", "openai")  # openai, ollama, deepseek
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "7shi/tanuki-dpo-v1.0:8b-q6_K")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 app = FastAPI()
 
@@ -195,6 +197,21 @@ async def get_ollama_response(messages):
                     raise
 
 
+async def get_deepseek_response(messages):
+    """DeepSeek APIからの応答を取得"""
+    client = AsyncOpenAI(
+        api_key=DEEPSEEK_API_KEY,
+        base_url="https://api.deepseek.com"
+    )
+    response = await client.chat.completions.create(
+        model=DEEPSEEK_MODEL,
+        messages=messages,
+        max_tokens=250,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content.strip()
+
+
 async def split_into_sentences(text):
     """テキストを文単位で分割"""
     # 句点や感嘆符などで分割
@@ -238,6 +255,17 @@ async def display_with_speech(websocket, text, progress):
         await websocket.send_json({"type": "partial", "text": remaining_chars})
 
 
+async def get_chat_history(chat_id):
+    """チャットの履歴を取得する"""
+    messages_query = (
+        ChatMessage.__table__.select()
+        .where(ChatMessage.chat_id == chat_id)
+        .order_by(ChatMessage.timestamp)
+    )
+    messages = await database.fetch_all(messages_query)
+    return [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+
+
 @app.websocket("/ws/{chat_id}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: int):
     await websocket.accept()
@@ -264,14 +292,18 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
             )
             await database.execute(update_query)
 
-            # LLMからの応答を取得
+            # チャット履歴を取得
+            history = await get_chat_history(chat_id)
+
+            # LLMへのメッセージを構築
             messages = [
                 {
                     "role": "system",
-                    "content": "あなたはご主人様に仕えるメイドです。できるだけ簡潔に応答してください。",
+                    "content": "あなたはご主人様に仕えるメイドです。できるだけ簡潔に応答してください。これまでの会話履歴を考慮して応答してください。",
                 },
-                {"role": "user", "content": user_message},
             ]
+            # 履歴を追加（最新の10件まで）
+            messages.extend(history[-10:])
 
             full_response = ""
             current_sentence = ""
@@ -284,7 +316,13 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
                 for sentence in sentences:
                     progress = await speech(sentence)
                     await display_with_speech(websocket, sentence, progress)
-
+            elif ENGINE == "deepseek":
+                full_response = await get_deepseek_response(messages)
+                # DeepSeekの応答を文単位で処理
+                sentences = await split_into_sentences(full_response)
+                for sentence in sentences:
+                    progress = await speech(sentence)
+                    await display_with_speech(websocket, sentence, progress)
             else:  # ollama
                 try:
                     async for chunk in get_ollama_response(messages):
