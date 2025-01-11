@@ -44,6 +44,8 @@
             color: #333;
             text-decoration: none;
             transition: background-color 0.2s;
+            cursor: pointer;
+            position: relative;
         }
 
         .chat-item:hover {
@@ -52,6 +54,20 @@
 
         .chat-item.active {
             background-color: #e9ecef;
+        }
+
+        .chat-title {
+            display: inline-block;
+            width: 100%;
+        }
+
+        .chat-title-input {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: inherit;
+            background-color: white;
         }
 
         .new-chat-button {
@@ -179,6 +195,29 @@
         #send-button:hover {
             background-color: #45a049;
         }
+
+        .tooltip {
+            visibility: hidden;
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 1000;
+            white-space: nowrap;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .chat-item:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+            transition-delay: 0.5s;
+        }
     </style>
 </head>
 
@@ -192,9 +231,15 @@
         </form>
         <div class="chat-list">
             {% for chat_item in chats %}
-            <a href="/chat/{{ chat_item.id }}" class="chat-item {% if chat_item.id == chat.id %}active{% endif %}">
-                {{ chat_item.title }}
-            </a>
+            <div class="chat-item {% if chat_item.id == chat.id %}active{% endif %}">
+                <span class="chat-title" 
+                      data-chat-id="{{ chat_item.id }}" 
+                      onclick="handleClick(event, {{ chat_item.id }})" 
+                      ondblclick="handleDoubleClick(event, this, {{ chat_item.id }})">
+                    {{ chat_item.title }}
+                </span>
+                <div class="tooltip">作成日時: {{ chat_item.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            </div>
             {% endfor %}
         </div>
     </div>
@@ -220,6 +265,94 @@
     </div>
 
     <script>
+        let clickTimer = null;
+        let preventClick = false;
+
+        function handleClick(event, chatId) {
+            if (preventClick) {
+                preventClick = false;
+                return;
+            }
+
+            if (clickTimer === null) {
+                clickTimer = setTimeout(function() {
+                    clickTimer = null;
+                    window.location.href = `/chat/${chatId}`;
+                }, 200);
+            }
+        }
+
+        function handleDoubleClick(event, element, chatId) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+            }
+            preventClick = true;
+            editTitle(element, chatId);
+        }
+
+        function editTitle(element, chatId) {
+            const currentTitle = element.textContent.trim();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentTitle;
+            input.className = 'chat-title-input';
+            
+            // 入力欄がクリックされたときにイベントの伝播を防ぐ
+            input.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            // 入力欄でEnterキーが押されたときの処理
+            input.onkeydown = async function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await updateTitle(input.value.trim(), currentTitle, element, chatId);
+                }
+            };
+
+            // 入力欄からフォーカスが外れたときの処理
+            input.onblur = async function(e) {
+                await updateTitle(input.value.trim(), currentTitle, element, chatId);
+            };
+
+            element.style.display = 'none';
+            element.parentNode.insertBefore(input, element);
+            input.focus();
+            input.select();
+        }
+
+        async function updateTitle(newTitle, currentTitle, element, chatId) {
+            if (newTitle && newTitle !== currentTitle) {
+                try {
+                    const response = await fetch(`/chat/${chatId}/title`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ title: newTitle })
+                    });
+                    if (response.ok) {
+                        element.textContent = newTitle;
+                    } else {
+                        console.error('Error updating title:', await response.text());
+                        element.textContent = currentTitle;
+                    }
+                } catch (error) {
+                    console.error('Error updating title:', error);
+                    element.textContent = currentTitle;
+                }
+            } else {
+                element.textContent = currentTitle;
+            }
+            element.style.display = '';
+            element.parentNode.querySelector('.chat-title-input')?.remove();
+        }
+
         // ページ読み込み時に最下部にスクロール
         document.addEventListener('DOMContentLoaded', function () {
             scrollToBottom(true);

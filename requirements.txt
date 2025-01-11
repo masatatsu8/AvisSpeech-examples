@@ -11,3 +11,4 @@ aiofiles
 sqlalchemy
 databases[sqlite]
 aiosqlite
+pytz

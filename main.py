@@ -10,6 +10,8 @@ import json
 import asyncio
 from database import database, Chat, ChatMessage
 from datetime import datetime
+import pytz
+from pydantic import BaseModel
 
 # 環境変数の読み込み
 load_dotenv()
@@ -20,6 +22,18 @@ app = FastAPI()
 # 静的ファイルとテンプレートの設定
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# タイムゾーンの設定
+jst = pytz.timezone('Asia/Tokyo')
+
+def convert_to_jst(dt):
+    """UTCをJSTに変換する"""
+    if dt.tzinfo is None:  # タイムゾーン情報がない場合はUTCとして扱う
+        dt = pytz.utc.localize(dt)
+    return dt.astimezone(jst)
+
+class ChatTitleUpdate(BaseModel):
+    title: str
 
 
 @app.on_event("startup")
@@ -37,8 +51,17 @@ async def read_root(request: Request):
     # チャット一覧を取得
     query = Chat.__table__.select().order_by(Chat.updated_at.desc())
     chats = await database.fetch_all(query)
+    
+    # 日時をJSTに変換
+    converted_chats = []
+    for chat in chats:
+        chat_dict = dict(chat)
+        chat_dict['created_at'] = convert_to_jst(chat_dict['created_at'])
+        chat_dict['updated_at'] = convert_to_jst(chat_dict['updated_at'])
+        converted_chats.append(chat_dict)
+    
     return templates.TemplateResponse(
-        "chat_list.html", {"request": request, "chats": chats}
+        "chat_list.html", {"request": request, "chats": converted_chats}
     )
 
 
@@ -58,11 +81,24 @@ async def read_chat(request: Request, chat_id: int):
     chats_query = Chat.__table__.select().order_by(Chat.updated_at.desc())
     chats = await database.fetch_all(chats_query)
     
+    # 日時をJSTに変換
+    converted_chats = []
+    for chat in chats:
+        chat_dict = dict(chat)
+        chat_dict['created_at'] = convert_to_jst(chat_dict['created_at'])
+        chat_dict['updated_at'] = convert_to_jst(chat_dict['updated_at'])
+        converted_chats.append(chat_dict)
+    
     # 現在のチャットの情報を取得
     chat_query = Chat.__table__.select().where(Chat.id == chat_id)
     chat = await database.fetch_one(chat_query)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
+    
+    # 現在のチャットの日時をJSTに変換
+    chat_dict = dict(chat)
+    chat_dict['created_at'] = convert_to_jst(chat_dict['created_at'])
+    chat_dict['updated_at'] = convert_to_jst(chat_dict['updated_at'])
     
     # チャットのメッセージを取得
     messages_query = (
@@ -72,15 +108,33 @@ async def read_chat(request: Request, chat_id: int):
     )
     messages = await database.fetch_all(messages_query)
     
+    # メッセージの日時をJSTに変換
+    converted_messages = []
+    for message in messages:
+        message_dict = dict(message)
+        message_dict['timestamp'] = convert_to_jst(message_dict['timestamp'])
+        converted_messages.append(message_dict)
+    
     return templates.TemplateResponse(
         "chat.html",
         {
             "request": request,
-            "chat": chat,
-            "messages": messages,
-            "chats": chats,
+            "chat": chat_dict,
+            "messages": converted_messages,
+            "chats": converted_chats,
         },
     )
+
+
+@app.put("/chat/{chat_id}/title")
+async def update_chat_title(chat_id: int, title_update: ChatTitleUpdate):
+    query = (
+        Chat.__table__.update()
+        .where(Chat.id == chat_id)
+        .values(title=title_update.title, updated_at=datetime.utcnow())
+    )
+    await database.execute(query)
+    return {"status": "success"}
 
 
 @app.websocket("/ws/{chat_id}")
