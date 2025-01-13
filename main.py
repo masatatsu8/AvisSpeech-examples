@@ -14,17 +14,37 @@ import pytz
 import aiohttp
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
+import traceback
 
 # 環境変数の読み込み
-load_dotenv()
+
+print("Current working directory:", os.getcwd())
+print("Loading .env file...")
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+print("Looking for .env at:", env_path)
+load_dotenv(dotenv_path=env_path, verbose=True)
+print("Environment variables after loading:")
+print("DEBUG:", os.getenv("DEBUG"))
+print("ENGINE:", os.getenv("ENGINE"))
+if os.getenv("ENGINE") == "openai":
+    print("OPENAI_MODEL:", os.getenv("OPENAI_MODEL"))
+elif os.getenv("ENGINE") == "deepseek":
+    print("DEEPSEEK_MODEL:", os.getenv("DEEPSEEK_MODEL"))
+elif os.getenv("ENGINE") == "ollama":
+    print("OLLAMA_MODEL:", os.getenv("OLLAMA_MODEL"))
+
+if os.getenv("DEBUG", "False").strip() == "True":
+    DEBUG = True
+else:
+    DEBUG = False
 
 # エンジンの設定を読み込み
-ENGINE = os.getenv("ENGINE", "openai")  # openai, ollama, deepseek
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi4")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+ENGINE = os.getenv("ENGINE", "openai").strip()  # openai, ollama, deepseek
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").strip()
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi4").strip()
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY").strip()
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
 
 app = FastAPI()
 
@@ -182,6 +202,8 @@ async def delete_message(message_id: int):
 
 async def get_openai_response(messages):
     """OpenAI APIからの応答をストリーミングで取得"""
+    if DEBUG:
+        print("Using OpenAI API with model:", OPENAI_MODEL)
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     async for chunk in await client.chat.completions.create(
         model=OPENAI_MODEL,
@@ -196,6 +218,8 @@ async def get_openai_response(messages):
 
 async def get_deepseek_response(messages):
     """DeepSeek APIからの応答をストリーミングで取得"""
+    if DEBUG:
+        print("Using DeepSeek API with model:", DEEPSEEK_MODEL)
     client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
     async for chunk in await client.chat.completions.create(
         model=DEEPSEEK_MODEL,
@@ -210,6 +234,8 @@ async def get_deepseek_response(messages):
 
 async def get_ollama_response(messages):
     """Ollama APIからの応答をストリーミングで取得"""
+    if DEBUG:
+        print("Using Ollama API with model:", OLLAMA_MODEL)
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{OLLAMA_URL}/api/generate",
@@ -280,14 +306,22 @@ async def process_streaming_response(websocket, response_generator):
     full_response = ""
     current_sentence = ""
     current_progress = None
+    chunk_count = 0
 
     try:
         async for chunk in response_generator:
+            chunk_count += 1
+            if DEBUG:
+                print(f"Chunk {chunk_count}: {chunk}")
+
             full_response += chunk
             current_sentence += chunk
 
             # 文の終わりを検出
             if any(current_sentence.endswith(d) for d in ["。", "！", "？", "!", "?"]):
+                if DEBUG:
+                    print(f"Complete sentence detected: {current_sentence}")
+
                 if current_progress is not None:
                     # 前の音声が終わるのを待つ
                     while not current_progress.is_finished:
@@ -299,16 +333,21 @@ async def process_streaming_response(websocket, response_generator):
                 current_sentence = ""
 
     except Exception as e:
+        print(f"Error in streaming response: {str(e)}")
         raise
 
     # 残りの文を処理
     if current_sentence.strip():
+        print(f"Processing remaining text: {current_sentence}")
+
         if current_progress is not None:
             while not current_progress.is_finished:
                 await asyncio.sleep(0.01)
         current_progress = await speech(current_sentence)
         await display_with_speech(websocket, current_sentence, current_progress)
 
+    if DEBUG:
+        print(f"Total chunks received: {chunk_count}")
     return full_response
 
 
@@ -346,13 +385,37 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
                 messages = [
                     {
                         "role": "system",
-                        "content": "あなたはご主人様に仕えるメイドです。できるだけ簡潔に応答してください。これまでの会話履歴を考慮して応答してください。",
+                        "content": """
+    あなたは、ご主人様に仕える優雅で愛らしいメイドです。ご主人様に対して親しみやすく、丁寧かつ温かみのある口調で応答してください。会話として自然でスムーズなテンポを保つため、応答は極力短く、簡潔にしてください。特に以下のルールを絶対に守ること:
+	1.	応答は2〜3文以内として、極力短く、簡潔にすること。
+	2.	列挙形式（番号(1,2,3...)や箇条書きを使わない。
+    3.  括弧を使った細く説明や例示をしない。
+    4.  「以下のポイント」「次の例」などの表現を使わない。
+    5.  教師や教育者、講師や識者のような喋り方はしない。
+	6.	ご主人様の言葉や感情に共感し、応答に愛らしさを含める。
+
+たとえば以下のような応答はしないように。
+
+「以下の点が挙げられます：
+1. **就寝前にリラックスする**: 読書や深呼吸、ゆっくりした音楽などで心を落ち着けましょう。
+2. **スマホの使用を控える**: ブルーライトが覚醒作用をもたらすことがあるため、就寝1時間前にはデバイスの使用を減らすのがおすすめです。
+3. **入浴をする**: 就寝1〜2時間前にぬるめのお風・・・
+」
+「
+- **暗く涼しい部屋**：明かりを消して、室温を少し下げると良いです。
+- **快適な枕や布団**：自分の体型に合った寝具を使うことで、より深く眠れます。
+- **スマホやテレビの使用を控える**：ブルーライトは睡眠リズムを乱す可能性があります。
+
+以上のルールを厳守し、ご主人様との会話を優雅で楽しいものにしてください。あくまでもご主人様の感情に寄り添って、然な口調で応答してください。
+""",
                     },
                 ]
                 # 履歴を追加（最新の10件まで）
                 messages.extend(history[-10:])
 
                 # エンジンに応じたレスポンスジェネレータを選択
+                print(f"Selected engine (after strip): '{ENGINE}'")
+
                 if ENGINE == "openai":
                     response_generator = get_openai_response(messages)
                 elif ENGINE == "deepseek":
@@ -361,9 +424,17 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
                     response_generator = get_ollama_response(messages)
 
                 # 応答を処理
-                full_response = await process_streaming_response(
-                    websocket, response_generator
-                )
+                try:
+                    full_response = await process_streaming_response(
+                        websocket, response_generator
+                    )
+                    if DEBUG:
+                        print(f"Full API response: {full_response}")
+                except Exception as e:
+                    print(f"Error during API response processing: {str(e)}")
+                    print(f"Error type: {type(e).__name__}")
+                    print(f"Error details: {traceback.format_exc()}")
+                    raise
 
                 # 余分なメッセージを削除（Ollama用）
                 if ENGINE == "ollama" and "banphrase" in full_response:

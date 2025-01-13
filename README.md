@@ -1,6 +1,6 @@
 # AI Maid Chat
 
-音声合成を使用したメイドキャラクターとの対話システム。OpenAI GPT-4とAivisSpeechを組み合わせて、テキストと音声による自然な対話を実現します。
+音声合成を使用したメイドキャラクターとの対話システム。OpenAI GPT-4と[AivisSpeech](https://aivis-project.com/#products-aivisspeech)を組み合わせて、テキストと音声による自然な対話を実現します。
 
 ## 特徴
 
@@ -40,7 +40,7 @@ pip install -r requirements.txt
 ```
 
 3. 環境変数の設定
-`.env.example`をコピーして`.env`を作成し、OpenAI APIキーを設定
+`.env.example`をコピーして`.env`を作成し、各APIに関する設定を記述。
 ```bash
 cp env.example .env
 # .envファイルを編集してAPIキーを設定
@@ -53,13 +53,22 @@ cp env.example .env
 
 ## 使用方法
 
+### CLI版
 1. プログラムを起動
 ```bash
-python app.py
+python cli.py
 ```
-
 2. プロンプトに従って対話を入力
 3. 'quit'または'終了'と入力して終了
+
+### GUI版
+1. プログラムを起動
+```bash
+uvicorn main:app --reload --port 8000
+```
+2. ブラヴザで`http://localhost:8000`にアクセス
+
+
 
 ## 機能の詳細
 
