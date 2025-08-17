@@ -28,8 +28,6 @@ print("DEBUG:", os.getenv("DEBUG"))
 print("ENGINE:", os.getenv("ENGINE"))
 if os.getenv("ENGINE") == "openai":
     print("OPENAI_MODEL:", os.getenv("OPENAI_MODEL"))
-elif os.getenv("ENGINE") == "deepseek":
-    print("DEEPSEEK_MODEL:", os.getenv("DEEPSEEK_MODEL"))
 elif os.getenv("ENGINE") == "ollama":
     print("OLLAMA_MODEL:", os.getenv("OLLAMA_MODEL"))
 
@@ -39,12 +37,10 @@ else:
     DEBUG = False
 
 # エンジンの設定を読み込み
-ENGINE = os.getenv("ENGINE", "openai").strip()  # openai, ollama, deepseek
+ENGINE = os.getenv("ENGINE", "openai").strip()  # openai, ollama
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").strip()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi4").strip()
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY").strip()
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
 
 app = FastAPI()
 
@@ -216,20 +212,6 @@ async def get_openai_response(messages):
             yield chunk.choices[0].delta.content
 
 
-async def get_deepseek_response(messages):
-    """DeepSeek APIからの応答をストリーミングで取得"""
-    if DEBUG:
-        print("Using DeepSeek API with model:", DEEPSEEK_MODEL)
-    client = AsyncOpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
-    async for chunk in await client.chat.completions.create(
-        model=DEEPSEEK_MODEL,
-        messages=messages,
-        max_tokens=250,
-        temperature=0.7,
-        stream=True,
-    ):
-        if chunk.choices[0].delta.content is not None:
-            yield chunk.choices[0].delta.content
 
 
 async def get_ollama_response(messages):
@@ -418,8 +400,6 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: int):
 
                 if ENGINE == "openai":
                     response_generator = get_openai_response(messages)
-                elif ENGINE == "deepseek":
-                    response_generator = get_deepseek_response(messages)
                 else:  # ollama
                     response_generator = get_ollama_response(messages)
 

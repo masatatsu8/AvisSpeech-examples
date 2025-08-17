@@ -1,14 +1,28 @@
+# Core dependencies
 openai>=1.0.0
 python-dotenv
 requests
+
+# Audio processing
 pyaudio
 numpy
+
+# Web framework
 fastapi
-uvicorn
+uvicorn[standard]
 jinja2
 python-multipart
 aiofiles
+
+# Database
 sqlalchemy
 databases[sqlite]
 aiosqlite
+
+# Utilities
 pytz
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# black
+# flake8
